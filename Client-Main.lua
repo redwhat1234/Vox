@@ -46,6 +46,7 @@ ui.cursorIcon = "rbxassetid://1776629404"
 function character:Init()
 	repeat wait(tick) until player:FindFirstChild("PlayerGui"):FindFirstChild("Main")
 	character:createHotbar(9)
+	ui.selectionChanged(1)
 end
 
 function character:createHotbar(slots)
@@ -193,8 +194,14 @@ function ui:createBlockInfoContainer(id)
 	player.PlayerGui.Main.blockHovered.Text = itemMod.Localization[id]
 end
 
-function ui.selectionChanged(container)
-	
+function ui.selectionChanged(slot)
+	if character.currentlyEquipped ~= nil then
+		player.PlayerGui.Main.hotBar[character.currentlyEquipped].BackgroundTransparency = .75
+	end
+	character.currentlyEquipped = slot
+	player.PlayerGui.Main.hotBar[character.currentlyEquipped].BackgroundTransparency = 0
+	print("Changed Selected Slot To: "..slot)
+	return true
 end
 
 function ui.updateHotbar()
@@ -220,7 +227,7 @@ function ui.onStepped()
 		return true
 	end
 	if item:getId(mouse.Target.Name) ~= nil then
-		if itemMod.itemTypes[item:getId(mouse.Target.Name)] == itemMod.Type.Block then
+		if itemMod.itemTypes[item:getId(mouse.Target.Name)] == itemMod.Type.Block and (player.Character.PrimaryPart.Position - mouse.Target.Position).Magnitude < 3*5 then
 			if not mouse.Target:FindFirstChild("SelectionBox") then
 				if effects.currentBox ~= nil then
 					effects:destroyBox()
@@ -278,13 +285,17 @@ function input:registerInputEvent(inputE)
 	if keyMod.keyList[inputE.KeyCode] then
 		if keyMod.keyList[inputE.KeyCode] >= 1 and keyMod.keyList[inputE.KeyCode] <= 9 then
 			print("Found Equipment Slot KeyCode!")
+			ui.selectionChanged(keyMod.keyList[inputE.KeyCode])
 		end
 	end
 	if inputE.UserInputType == Enum.UserInputType.MouseButton1 then
 		local isBlock = item:checkBlockState(item:getId(target.Name))
 		if isBlock then
+			if (player.Character.PrimaryPart.Position - target.Position).Magnitude > 3*5 then
+				return
+			end
 			local canBreak = item:checkHardness(item:getId(target.Name))
-			if canBreak <= 6 and character.currentlyEquipped == nil then
+			if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
 				local success, tempPart, itemId = network:FireEvent("blockDamage", target, "Hand", 0, item:getId(target.Name))
 				if success == "breakBlock" then
 					--effects:registerParticle(CFrame.new(tempPart.Position), ColorSequence.new(tempPart.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
