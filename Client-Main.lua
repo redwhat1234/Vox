@@ -3,6 +3,17 @@ local player = game.Players.LocalPlayer
 local itemMod = require(game.ReplicatedStorage.modules.itemModule)
 local keyMod = require(game.ReplicatedStorage.modules.keyCode)
 
+repeat wait(tick) until player:FindFirstChild("PlayerGui")
+repeat wait(tick) until player.PlayerGui:FindFirstChild("Load")
+player.PlayerGui.Load.Enabled = true
+repeat wait(tick)
+	game:GetService("StarterGui"):SetCore("TopbarEnabled", false)
+	local loadUI = player.PlayerGui.Load
+	loadUI.loadBack.loadMain.Size = UDim2.new(workspace.genAmount.Value/100,0,1,0)
+	loadUI.label.Text = "Generating Terrain..."..workspace.genAmount.Value .."%"
+until workspace.hasFinishedGenerating.Value == true
+player.PlayerGui.Load.Enabled = false
+
 local character = {}
 local item = {}
 local weather = {}
@@ -45,19 +56,26 @@ function character:createHotbar(slots)
 		newSlot.stack.Text = ""
 		newSlot.Image.Image = ""
 		newSlot.Parent = player.PlayerGui.Main.hotBar
-		character.hotbar[i] = {}
+		character.hotbar[i] = {
+			["Id"] = 0,
+			["Stack"] = 0,
+			["Image"] = ""
+		}
 	end
 end
 
 function character:findOpenSlot(Id)
 	for i,v in pairs(character.hotbar) do
-		if character.hotbar[i] ~= {} and character.hotbar[i].Id == Id and character.hotbar[i].Stack < itemMod.maxStacks[Id] then
+		print("Slot Id: "..i.." Item Id: "..Id)
+		if character.hotbar[i].Id == Id and character.hotbar[i].Stack < itemMod.maxStacks[Id] then
 			character.hotbar[i].Stack = character.hotbar[i].Stack + 1
+			print("Updated Current Stack! .. Slot: "..i)
 			return true
-		elseif character.hotbar[i] == {} then
+		elseif character.hotbar[i].Id == 0 then
 			character.hotbar[i].Id = Id
 			character.hotbar[i].Stack = 1
 			character.hotbar[i].Image = itemMod.itemImage[Id]
+			print("Created New Stack! .. Slot: "..i)
 			return true
 		end
 	end
@@ -180,16 +198,14 @@ function ui.selectionChanged(container)
 end
 
 function ui.updateHotbar()
-	for i,v in pairs(player.PlayerGui.Main.hotBar:GetChildren()) do
-		if v.ClassName == "Frame" then
-			if character.hotbar[v.Name] then
-				if character.hotbar[v.Name] == {} then
-					v.stack.Text = ""
-					v.Image.Image = ""
-				else
-					v.stack.Text = "x".. character.hotbar[v.Name].Stack
-					v.Image.Image = character.hotbar[v.Name].Image
-				end
+	for i,v in pairs(character.hotbar) do
+		if player.PlayerGui.Main.hotBar:FindFirstChild(i) then
+			local slot = player.PlayerGui.Main.hotBar:FindFirstChild(i)
+			if v.Id == 0 then
+				slot.stack.Text = ""
+			else
+				slot.stack.Text = "x"..v.Stack
+				slot.Image.Image = itemMod.itemImage[v.Id]
 			end
 		end
 	end
@@ -268,11 +284,11 @@ function input:registerInputEvent(inputE)
 		local isBlock = item:checkBlockState(item:getId(target.Name))
 		if isBlock then
 			local canBreak = item:checkHardness(item:getId(target.Name))
-			if canBreak <= 3 and character.currentlyEquipped == nil then
-				local success, color, pos, itemId = network:FireEvent("blockDamage", target, "Hand", 0, item:getId(target.Name))
+			if canBreak <= 6 and character.currentlyEquipped == nil then
+				local success, tempPart, itemId = network:FireEvent("blockDamage", target, "Hand", 0, item:getId(target.Name))
 				if success == "breakBlock" then
-					effects:registerParticle(pos, color, 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
-					character:findOpenSlot(itemId)
+					--effects:registerParticle(CFrame.new(tempPart.Position), ColorSequence.new(tempPart.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
+					character:findOpenSlot(item:getId(target.Name))
 				end
 			end
 		end
