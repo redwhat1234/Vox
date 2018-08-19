@@ -3,6 +3,7 @@ local player = game.Players.LocalPlayer
 local itemMod = require(game.ReplicatedStorage.modules.itemModule)
 local keyMod = require(game.ReplicatedStorage.modules.keyCode)
 local vectorMod = require(script.Parent.Placement.Mechanics)
+local craftMod = require(game.ReplicatedStorage.modules.craftingModule)
 
 repeat wait(tick) until player:FindFirstChild("PlayerGui")
 repeat wait(tick) until player.PlayerGui:FindFirstChild("Load")
@@ -29,6 +30,7 @@ character.hotbar = {}
 character.inventory = {}
 character.currentlyEquipped = nil
 character.invOpen = false
+character.craftOpen = false
 
 item.type = {}
 item.type.tool = {}
@@ -42,6 +44,9 @@ chat.filter = {}
 chat.event = {}
 chat.tags = {}
 
+ui.craft = {}
+ui.craft.x = 1
+
 effects.currentBox = nil
 
 ui.cursorIcon = "rbxassetid://1776629404"
@@ -51,6 +56,7 @@ function character:Init()
 	character:createHotbar(9)
 	ui.selectionChanged(1)
 	character:registerInventory()
+	ui.craft:changeSelection()
 end
 
 function character:createHotbar(slots)
@@ -71,7 +77,7 @@ end
 
 function character:registerInventory()
 	local x = 0
-	for i,v in pairs(player.PlayerGui.Main.Inventory:GetChildren()) do
+	for i,v in pairs(player.PlayerGui.Main.Inventory.SlotBag:GetChildren()) do
 		x = x + 1
 		if v.ClassName == "Frame" then
 			v.Name = x
@@ -255,6 +261,7 @@ function ui.updateHotbar()
 end
 
 function ui.onStepped()
+	player.PlayerGui.Main.Craft.Visible = character.craftOpen
 	player.PlayerGui.Main.Inventory.Visible = character.invOpen
 	world:updateCurrentChunk()
 	world:updateChunks()
@@ -283,6 +290,19 @@ function ui.onStepped()
 		player.PlayerGui.Main.blockHovered.Visible = false
 		effects:destroyBox()
 	end
+end
+
+function ui.craft:changeSelection()
+	ui.craft.x = ui.craft.x + 1
+	if ui.craft.x > #craftMod.recipeList then
+		ui.craft.x = #craftMod.recipeList
+	end
+	player.PlayerGui.Main.Craft.finishName.Text = itemMod.Localization[itemMod.Id[craftMod.recipeList[ui.craft.x][1][1]]].." x"..craftMod.recipeList[ui.craft.x][1][2]
+	player.PlayerGui.Main.Craft.itemName.Text = itemMod.Localization[itemMod.Id[craftMod.recipeList[ui.craft.x][3][2]]].." x"..craftMod.recipeList[ui.craft.x][3][1]
+end
+
+function ui.craft:createItem()
+	
 end
 
 function effects:registerParticle(pos, color, time, accel, size, speed)
@@ -330,6 +350,12 @@ function input:registerInputEvent(inputE)
 				character.invOpen = true
 			else
 				character.invOpen = false
+			end
+		elseif keyMod.keyList[inputE.KeyCode] == 11 then
+			if not character.craftOpen then
+				character.craftOpen = true
+			else
+				character.craftOpen = false
 			end
 		end
 	end
