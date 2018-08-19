@@ -2,6 +2,7 @@ local player = game.Players.LocalPlayer
 
 local itemMod = require(game.ReplicatedStorage.modules.itemModule)
 local keyMod = require(game.ReplicatedStorage.modules.keyCode)
+local vectorMod = require(script.Parent.Placement.Mechanics)
 
 repeat wait(tick) until player:FindFirstChild("PlayerGui")
 repeat wait(tick) until player.PlayerGui:FindFirstChild("Load")
@@ -27,6 +28,7 @@ local world = {}
 character.hotbar = {}
 character.inventory = {}
 character.currentlyEquipped = nil
+character.invOpen = false
 
 item.type = {}
 item.type.tool = {}
@@ -48,6 +50,7 @@ function character:Init()
 	repeat wait(tick) until player:FindFirstChild("PlayerGui"):FindFirstChild("Main")
 	character:createHotbar(9)
 	ui.selectionChanged(1)
+	character:registerInventory()
 end
 
 function character:createHotbar(slots)
@@ -63,6 +66,21 @@ function character:createHotbar(slots)
 			["Stack"] = 0,
 			["Image"] = ""
 		}
+	end
+end
+
+function character:registerInventory()
+	local x = 0
+	for i,v in pairs(player.PlayerGui.Main.Inventory:GetChildren()) do
+		x = x + 1
+		if v.ClassName == "Frame" then
+			v.Name = x
+			character.inventory[x] = {
+				["Id"] = 0,
+				["Stack"] = 0,
+				["Image"] = ""	
+			}
+		end
 	end
 end
 
@@ -180,6 +198,23 @@ function item.type.block.onUse(Id)
 	
 end
 
+function item:placeBlock()
+	print("Recieved Request!")
+	local item = character.hotbar[character.currentlyEquipped]
+	local Id = character.hotbar[character.currentlyEquipped].Id
+	local stack = character.hotbar[character.currentlyEquipped].Stack
+	if stack > 0 then
+		local placed = network:FireEvent("placeBlock", Id, CFrame.new(player:GetMouse().Target.Position + vectorMod:returnVector(player:GetMouse().TargetSurface)), player:GetMouse().Target.Parent.Name)
+		if placed then
+			character.hotbar[character.currentlyEquipped].Stack = character.hotbar[character.currentlyEquipped].Stack - 1
+			if character.hotbar[character.currentlyEquipped].Stack == 0 then
+				character.hotbar[character.currentlyEquipped].Id = 0
+				character.hotbar[character.currentlyEquipped].Image = ""
+			end
+		end
+	end
+end
+
 function network:FireEvent(event, ...)
 	if game.ReplicatedStorage.Events[event].ClassName == "RemoteFunction" then
 		local returnable = game.ReplicatedStorage.Events[event]:InvokeServer(...)
@@ -220,6 +255,8 @@ function ui.updateHotbar()
 end
 
 function ui.onStepped()
+	player.PlayerGui.Main.Inventory.Visible = character.invOpen
+	world:updateCurrentChunk()
 	world:updateChunks()
 	ui.updateHotbar()
 	local mouse = player:GetMouse()
@@ -288,6 +325,12 @@ function input:registerInputEvent(inputE)
 		if keyMod.keyList[inputE.KeyCode] >= 1 and keyMod.keyList[inputE.KeyCode] <= 9 then
 			print("Found Equipment Slot KeyCode!")
 			ui.selectionChanged(keyMod.keyList[inputE.KeyCode])
+		elseif keyMod.keyList[inputE.KeyCode] == 10 then
+			if not character.invOpen then
+				character.invOpen = true
+			else
+				character.invOpen = false
+			end
 		end
 	end
 	if inputE.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -304,6 +347,28 @@ function input:registerInputEvent(inputE)
 					character:findOpenSlot(item:getId(target.Name))
 				end
 			end
+		end
+	end
+	if inputE.UserInputType == Enum.UserInputType.MouseButton2 then
+		print("BlockPlace Attempt!")
+		local isBlock = item:checkBlockState(item:getId(target.Name))
+		if isBlock then
+			if (player.Character.PrimaryPart.Position - target.Position).Magnitude > 3*5 then
+				return
+			end
+			if character.currentlyEquipped ~= nil then
+				if itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
+					item:placeBlock()
+				end
+			end
+		end
+	end
+end
+
+function world:updateCurrentChunk()
+	for i,v in pairs(workspace.Blocks:GetChildren()) do
+		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 24 then
+			player.PlayerGui.Main.currChunk.Text = v.Name
 		end
 	end
 end
