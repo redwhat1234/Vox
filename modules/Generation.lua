@@ -6,34 +6,6 @@ function RoundMultiple(n, mult)
    return (n+h) - (n+h)%mult
 end
 
-module.GeneratePlains = function(a,b, player)
-	local model = Instance.new("Model")
-	model.Parent = workspace.Blocks
-	model.Name = math.random()
-	for x = a,a+8 do
-		for z = b,b+8 do
-			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
-			local clone = game.ReplicatedStorage.Blocks.blockGrass:Clone()
-			clone.Parent = model
-			clone.CFrame = CFrame.new(x*3,height,z*3)
-		end
-	end
-end
-
-module.GenerateDirt = function(a,b,player)
-	local model = Instance.new("Model")
-	model.Parent = workspace.Blocks
-	model.Name = math.random()
-	for x = a,a+8 do
-		for z = b,b+8 do
-			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
-			local clone = game.ReplicatedStorage.Blocks.blockDirt:Clone()
-			clone.Parent = model
-			clone.CFrame = CFrame.new(x*3,height - 3,z*3)
-		end
-	end
-end 
-
 function determineBlock()
 	local chance = math.random(1,100) 
 	if chance == 25 then
@@ -53,42 +25,67 @@ function determineBlock()
 	end
 end
 
-module.GenerateStone = function(a,b,player)
-	local model = Instance.new("Model")
-	model.Parent = workspace.Blocks
-	model.Name = math.random()
-	for y = 2, 12 do
+function module.generateChunk(a,b,y1,y2,YWaitTime, ZWaitTime)
+	local chunk = Instance.new("Model", workspace.Blocks)
+	chunk.Name = "Chunk_"..#workspace.Blocks:GetChildren()
+	local chunkPart = Instance.new("Part", chunk)
+	chunk.PrimaryPart = chunkPart
+	chunkPart.Size = Vector3.new(8*3,3,8*3)
+	chunkPart.Anchored = true
+	chunkPart.CFrame = CFrame.new(a*3,-65,b*3)
+	chunkPart.Material = Enum.Material.Granite
+	chunkPart.Color = Color3.fromRGB(0,0,0)
 	for x = a,a+8 do
 		for z = b,b+8 do
 			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
+			local clone = game.ReplicatedStorage.Blocks.blockGrass:Clone()
+			clone.Parent = chunk
+			clone.CFrame = CFrame.new(x*3,height,z*3)
+		end
+	end
+	for x = a,a+8 do
+		for z = b,b+8 do
+			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
+			local clone = game.ReplicatedStorage.Blocks.blockDirt:Clone()
+			clone.Parent = chunk
+			clone.CFrame = CFrame.new(x*3,height - 3,z*3)
+		end
+	end
+	for y = y1, y2 do
+		if YWaitTime then
+			wait(tick)
+		end
+	for x = a,a+8 do
+		for z = b,b+8 do
+			if ZWaitTime then
+				wait(tick)
+			end
+			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
 			local clone = determineBlock()
-			clone.Parent = model
+			clone.Parent = chunk
 			clone.CFrame = CFrame.new(x*3,height - (3*y),z*3)
 		end
 	end
 	end
-end 
-
-function module.generateTrees(a,b)
 	for x = a,a+8 do
 		for z = b,b+8 do
 			local chance = math.random(1,100)
 			if chance <= 15 and chance >= 5 then
 			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
 			local clone = game.ReplicatedStorage.Foliage.Tree:Clone()
-			clone.Parent = workspace
+			clone.Parent = chunk
 			clone:SetPrimaryPartCFrame(CFrame.new(x*3,height + (3),z*3))
 			elseif chance <= 25 and chance >= 16 then
 			local height = RoundMultiple(math.floor(math.noise(x/24,z/24)*51),3)
 			local clone = game.ReplicatedStorage.Foliage.Fern:Clone()
-			clone.Parent = workspace
+			clone.Parent = chunk
 			clone:SetPrimaryPartCFrame(CFrame.new(x*3,height + (3),z*3))
 			else
 				return
 			end
 		end
 	end
-end
+end 
 
 module.UpdateGen = function(player)
 	for index, child in pairs(workspace.Blocks:GetChildren()) do
