@@ -45,7 +45,7 @@ chat.event = {}
 chat.tags = {}
 
 ui.craft = {}
-ui.craft.x = 1
+ui.craft.x = 0
 
 effects.currentBox = nil
 
@@ -116,6 +116,22 @@ function character:findOpenSlot(Id)
 			return true
 		end
 	end
+end
+
+function character:FindItemOnPlayer(Id)
+	for i,v in pairs(character.inventory) do
+		print(i.."::"..v.Id)
+		if v.Id == Id then
+			return v
+		end
+	end
+	for i,v in pairs(character.hotbar) do
+		print(i.."::"..v.Id)
+		if v.Id == Id then
+			return v
+		end
+	end
+	return false
 end
 
 function character:FindItem(container)
@@ -295,14 +311,28 @@ end
 function ui.craft:changeSelection()
 	ui.craft.x = ui.craft.x + 1
 	if ui.craft.x > #craftMod.recipeList then
-		ui.craft.x = #craftMod.recipeList
+		ui.craft.x = 1
 	end
 	player.PlayerGui.Main.Craft.finishName.Text = itemMod.Localization[itemMod.Id[craftMod.recipeList[ui.craft.x][1][1]]].." x"..craftMod.recipeList[ui.craft.x][1][2]
 	player.PlayerGui.Main.Craft.itemName.Text = itemMod.Localization[itemMod.Id[craftMod.recipeList[ui.craft.x][3][2]]].." x"..craftMod.recipeList[ui.craft.x][3][1]
 end
 
 function ui.craft:createItem()
-	
+	print("Attempting Craft of: "..craftMod.recipeList[ui.craft.x][1][1])
+	local itemToUse = character:FindItemOnPlayer(craftMod.recipeList[ui.craft.x][3][2])
+	if not itemToUse then
+		return false
+	end
+	if itemToUse then
+		itemToUse.Stack = itemToUse.Stack - craftMod.recipeList[ui.craft.x][3][1]
+		for i = 1, craftMod.recipeList[ui.craft.x][1][2] do
+			character:findOpenSlot(craftMod.recipeList[ui.craft.x][1][1])
+		end
+		if itemToUse.Stack == 0 then
+			itemToUse.Id = 0
+		end
+		return true 
+	end
 end
 
 function effects:registerParticle(pos, color, time, accel, size, speed)
@@ -359,6 +389,9 @@ function input:registerInputEvent(inputE)
 			end
 		end
 	end
+	if character.invOpen or character.craftOpen then
+		return false
+	end
 	if inputE.UserInputType == Enum.UserInputType.MouseButton1 then
 		local isBlock = item:checkBlockState(item:getId(target.Name))
 		if isBlock then
@@ -413,6 +446,14 @@ function world:updateChunks()
 end
 
 character:Init()
+
+
+player.PlayerGui.Main.Craft.Craft.MouseButton1Click:Connect(function()
+	ui.craft:createItem()	
+end)
+player.PlayerGui.Main.Craft.Right.MouseButton1Click:Connect(function()
+	ui.craft:changeSelection()	
+end)
 
 game:GetService("UserInputService").InputBegan:Connect(function(i)
 	input:registerInputEvent(i)
