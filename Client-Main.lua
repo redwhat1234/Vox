@@ -22,6 +22,7 @@ local chat = {}
 local ui = {}
 local effects = {}
 local input = {}
+local world = {}
 
 character.hotbar = {}
 character.inventory = {}
@@ -219,6 +220,7 @@ function ui.updateHotbar()
 end
 
 function ui.onStepped()
+	world:updateChunks()
 	ui.updateHotbar()
 	local mouse = player:GetMouse()
 	player:GetMouse().Icon = ui.cursorIcon
@@ -295,13 +297,26 @@ function input:registerInputEvent(inputE)
 				return
 			end
 			local canBreak = item:checkHardness(item:getId(target.Name))
-			if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
+			if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or canBreak <= 6 and character.hotbar[character.currentlyEquipped].Id == 0 then
 				local success, tempPart, itemId = network:FireEvent("blockDamage", target, "Hand", 0, item:getId(target.Name))
 				if success == "breakBlock" then
 					--effects:registerParticle(CFrame.new(tempPart.Position), ColorSequence.new(tempPart.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
 					character:findOpenSlot(item:getId(target.Name))
 				end
 			end
+		end
+	end
+end
+
+function world:updateChunks()
+	for i,v in pairs(workspace.Blocks:GetChildren()) do
+		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 48 then
+			v.Parent = game.ReplicatedStorage.blockCache
+		end
+	end
+	for i,v in pairs(game.ReplicatedStorage.blockCache:GetChildren()) do
+		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) < 48 then
+			v.Parent = workspace.Blocks
 		end
 	end
 end
