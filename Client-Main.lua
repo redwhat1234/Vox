@@ -44,9 +44,13 @@ chat.filter = {}
 chat.event = {}
 chat.tags = {}
 
+ui.chunkLevel = 1
+ui.scenic = true
 ui.craft = {}
+ui.craft.furnace = {}
 ui.craft.x = 0
 
+effects.currentBlock = nil
 effects.currentBox = nil
 
 ui.cursorIcon = "rbxassetid://1776629404"
@@ -177,7 +181,7 @@ function item:getTexture(id)
 end
 
 function item:checkBlockState(Id)
-	if itemMod.itemTypes[Id] == itemMod.Type.Block then
+	if itemMod.itemTypes[Id] == itemMod.Type.Block or itemMod.itemTypes[Id] == itemMod.Type.Block.Interactable then
 		return true
 	else
 		return false
@@ -248,6 +252,15 @@ function network:FireEvent(event, ...)
 	end
 end
 
+function chat:receiveMessage(p,m,...)
+	
+end
+
+function chat:registerMessage(message)
+	print("Attempting to send message!")
+	network:FireEvent("playerSentMessage", message)
+end
+
 function ui:createBlockInfoContainer(id)
 	player.PlayerGui.Main.blockHovered.Text = itemMod.Localization[id]
 end
@@ -277,6 +290,15 @@ function ui.updateHotbar()
 end
 
 function ui.onStepped()
+	if not ui.scenic then
+		game:GetService("UserInputService").MouseIconEnabled = false
+		player.PlayerGui.Main.Enabled = false
+	else
+		game:GetService("UserInputService").MouseIconEnabled = true
+		player.PlayerGui.Main.Enabled = true
+	end
+	player:GetMouse().TargetFilter = workspace.ignoreList
+	effects.updateEquippedItem()
 	player.PlayerGui.Main.Craft.Visible = character.craftOpen
 	player.PlayerGui.Main.Inventory.Visible = character.invOpen
 	world:updateCurrentChunk()
@@ -336,7 +358,7 @@ function ui.craft:createItem()
 end
 
 function effects:registerParticle(pos, color, time, accel, size, speed)
-	local part = Instance.new("Part", workspace)
+	local part = Instance.new("Part", workspace.ignoreList)
 	local particle = Instance.new("ParticleEmitter", part)
 	part.Size = size
 	part.Transparency = 1
@@ -344,10 +366,31 @@ function effects:registerParticle(pos, color, time, accel, size, speed)
 	part.CanCollide = false
 	particle.Color = color
 	particle.Acceleration = accel
-	particle.Speed = speed
+	particle.Speed = NumberRange.new(speed)
 	part.CFrame = pos
-	wait(time)
+	wait(time/16)
 	part:Destroy()
+end
+
+function effects:updateEquippedItem()
+	if character.hotbar[character.currentlyEquipped].Id ~= 0 then
+		if effects.currentBlock ~= nil and itemMod.itemLookUp(effects.currentBlock.Name) ~= character.hotbar[character.currentlyEquipped].Id then
+			effects.currentBlock:Destroy()
+			effects.currentBlock = nil
+		end
+		if itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
+			if effects.currentBlock == nil then
+		local newItem = game.ReplicatedStorage.Blocks[itemMod.Id[character.hotbar[character.currentlyEquipped].Id]]:Clone()
+			newItem.Parent = workspace.CurrentCamera
+			newItem.Size = Vector3.new(.4,.4,.4)
+			newItem.Anchored = true
+			effects.currentBlock = newItem
+			return true
+			else
+			effects.currentBlock.CFrame = workspace.CurrentCamera.CFrame + workspace.CurrentCamera.CFrame.LookVector/2 - workspace.CurrentCamera.CFrame.upVector/2 + workspace.CurrentCamera.CFrame.RightVector/2
+			end
+		end
+	end
 end
 
 function effects:registerBox(parent, color, size)
@@ -387,7 +430,21 @@ function input:registerInputEvent(inputE)
 			else
 				character.craftOpen = false
 			end
-		end
+		elseif keyMod.keyList[inputE.KeyCode] == 12 then
+			if ui.scenic then
+				ui.scenic = not ui.scenic
+			else
+				ui.scenic = not ui.scenic
+			end
+		elseif keyMod.keyList[inputE.KeyCode] == 13 then
+			if ui.chunkLevel < 3 then
+				ui.chunkLevel = ui.chunkLevel + 1
+			end
+		elseif keyMod.keyList[inputE.KeyCode] == 14 then
+			if ui.chunkLevel > 1 then
+				ui.chunkLevel = ui.chunkLevel - 1
+			end
+		end	
 	end
 	if character.invOpen or character.craftOpen then
 		return false
@@ -400,9 +457,9 @@ function input:registerInputEvent(inputE)
 			end
 			local canBreak = item:checkHardness(item:getId(target.Name))
 			if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or canBreak <= 6 and character.hotbar[character.currentlyEquipped].Id == 0 then
+				effects:registerParticle(target.CFrame, ColorSequence.new(target.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
 				local success, tempPart, itemId = network:FireEvent("blockDamage", target, "Hand", 0, item:getId(target.Name))
 				if success == "breakBlock" then
-					--effects:registerParticle(CFrame.new(tempPart.Position), ColorSequence.new(tempPart.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
 					character:findOpenSlot(item:getId(target.Name))
 				end
 			end
@@ -426,20 +483,27 @@ end
 
 function world:updateCurrentChunk()
 	for i,v in pairs(workspace.Blocks:GetChildren()) do
-		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 24 then
-			player.PlayerGui.Main.currChunk.Text = v.Name
+		if not v:FindFirstChild("PrimaryPart") then
+			return true
+		end
+		if v.PrimaryPart ~= nil then
+			if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 24 then
+				player.PlayerGui.Main.currChunk.Text = v.Name
+			end
 		end
 	end
 end
 
 function world:updateChunks()
+	game.Lighting.FogStart = 15*ui.chunkLevel
+	game.Lighting.FogEnd = 40*ui.chunkLevel
 	for i,v in pairs(workspace.Blocks:GetChildren()) do
-		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 48 then
+		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 48*ui.chunkLevel then
 			v.Parent = game.ReplicatedStorage.blockCache
 		end
 	end
 	for i,v in pairs(game.ReplicatedStorage.blockCache:GetChildren()) do
-		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) < 48 then
+		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) < 48*ui.chunkLevel then
 			v.Parent = workspace.Blocks
 		end
 	end
