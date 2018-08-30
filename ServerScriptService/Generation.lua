@@ -1,28 +1,30 @@
 
 local genService = require(script.Parent.Generation.genBase)
 local hasGenerated = false
+local biome = "Hills"
 spawn(function()
 local amount = 0
 for x = -50,50, 9 do
-	amount = amount + 4
+	wait(tick)
+	amount = amount + 8
 	for z = -50,50, 9 do
-		wait(tick)
-		genService.generateChunk(x,z,2,12)
+		local antHeight = math.floor(math.noise(x/14,z/14)*51)
+		if antHeight <= -24 then
+			biome = "Desert"
+		else
+			biome = "Hills"
+		end
+		genService.generateChunk(x,z,2,12, biome)
 		workspace.genAmount.Value = amount
-		if x >= 42 and z >= 42 then
+		if amount >= 96 then
 			print("Has Loaded!")
 			hasGenerated = true
 			workspace.hasFinishedGenerating.Value = true
 		end 
 	end
-end	
+end		
+workspace.SpawnLocation.CanCollide = false
 script.Disabled = true
 end)
 
 
-
-game:GetService("RunService").Stepped:Connect(function()
-	if hasGenerated then
-		workspace.SpawnLocation.CanCollide = false
-	end
-end)

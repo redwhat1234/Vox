@@ -14,7 +14,7 @@ repeat wait(tick)
 	loadUI.loadBack.loadMain.Size = UDim2.new(workspace.genAmount.Value/100,0,1,0)
 	loadUI.label.Text = "Generating Terrain..."..workspace.genAmount.Value .."%"
 until workspace.hasFinishedGenerating.Value == true
-player.PlayerGui.Load.Enabled = false
+
 
 local character = {}
 local item = {}
@@ -31,6 +31,9 @@ character.inventory = {}
 character.currentlyEquipped = nil
 character.invOpen = false
 character.craftOpen = false
+character.currentFood = 20
+character.maxFood = 20
+character.isWalking = false
 
 item.type = {}
 item.type.tool = {}
@@ -43,6 +46,10 @@ weather.event = {}
 chat.filter = {}
 chat.event = {}
 chat.tags = {}
+chat.joinColor = Color3.fromRGB(160, 165, 65)
+chat.firstJoinColor = Color3.fromRGB(148, 85, 165)
+chat.leaveColor = Color3.fromRGB(160, 165, 65)
+chat.systemColor = Color3.fromRGB(25, 183, 197)
 
 ui.chunkLevel = 1
 ui.scenic = true
@@ -52,8 +59,17 @@ ui.craft.x = 0
 
 effects.currentBlock = nil
 effects.currentBox = nil
+effects.Arm = nil
+effects.Offset = Vector3.new(0,0,0)
+effects.cloudHeight = 150
 
+ui.heartImage = "rbxgameasset://Images/Heart2"
+ui.halfHeartImage = ""
+ui.foodIcon = "rbxgameasset://Images/foodBar"
 ui.cursorIcon = "rbxassetid://1776629404"
+
+effects.blur = Instance.new("BlurEffect", workspace.CurrentCamera)
+effects.blur.Enabled = false
 
 function character:Init()
 	repeat wait(tick) until player:FindFirstChild("PlayerGui"):FindFirstChild("Main")
@@ -61,6 +77,13 @@ function character:Init()
 	ui.selectionChanged(1)
 	character:registerInventory()
 	ui.craft:changeSelection()
+	ui:createHealthBar(10)
+	player.PlayerGui.Main.chatBox.Text = "Press / to start typing!"
+	effects:registerArm()
+end
+
+function character.onStepped()
+	character.currentFood = character.currentFood - .0001
 end
 
 function character:createHotbar(slots)
@@ -188,6 +211,14 @@ function item:checkBlockState(Id)
 	end
 end
 
+function item:checkBlockStateModel(target)
+	if itemMod:itemLookUp(target.Parent.Name) then
+		return target.Parent
+	else
+		return false
+	end
+end
+
 function item:checkHardness(Id)
 	return itemMod.Type.Block.Hardness[Id]
 end
@@ -229,13 +260,17 @@ function item:placeBlock()
 	local item = character.hotbar[character.currentlyEquipped]
 	local Id = character.hotbar[character.currentlyEquipped].Id
 	local stack = character.hotbar[character.currentlyEquipped].Stack
+	print("Item: Id:"..Id.." Stack:"..stack)
 	if stack > 0 then
+		print("[Placement] Firing Request: Id: "..Id)
 		local placed = network:FireEvent("placeBlock", Id, CFrame.new(player:GetMouse().Target.Position + vectorMod:returnVector(player:GetMouse().TargetSurface)), player:GetMouse().Target.Parent.Name)
 		if placed then
 			character.hotbar[character.currentlyEquipped].Stack = character.hotbar[character.currentlyEquipped].Stack - 1
 			if character.hotbar[character.currentlyEquipped].Stack == 0 then
 				character.hotbar[character.currentlyEquipped].Id = 0
 				character.hotbar[character.currentlyEquipped].Image = ""
+				ui:updateHotbar()
+				effects:updateArm()
 			end
 		end
 	end
@@ -252,8 +287,8 @@ function network:FireEvent(event, ...)
 	end
 end
 
-function chat:receiveMessage(p,m,...)
-	
+function chat:receiveMessage(p,m,tag)
+	ui:createMessage(p,m,tag)
 end
 
 function chat:registerMessage(message)
@@ -261,8 +296,10 @@ function chat:registerMessage(message)
 	network:FireEvent("playerSentMessage", message)
 end
 
-function ui:createBlockInfoContainer(id)
+function ui:createBlockInfoContainer(item)
+	local id, position = item.Name, item.Position
 	player.PlayerGui.Main.blockHovered.Text = itemMod.Localization[id]
+	player.PlayerGui.Main.blockHovered2.Text = "Block Height: "..math.floor(position.Y)
 end
 
 function ui.selectionChanged(slot)
@@ -272,7 +309,56 @@ function ui.selectionChanged(slot)
 	character.currentlyEquipped = slot
 	player.PlayerGui.Main.hotBar[character.currentlyEquipped].BackgroundTransparency = 0
 	print("Changed Selected Slot To: "..slot)
+	effects.currentBlock = nil
 	return true
+end
+
+function ui:cycleMessages()
+	for i,v in pairs(player.PlayerGui.Main.chatFrame:GetChildren()) do
+		v.Position = UDim2.new(0,0,0,v.Position.Y.Offset-v.Size.Y.Offset)
+		if v.Position.Y.Offset <= 0 then
+			v:Destroy()
+		end
+	end
+end
+
+function ui:createMessage(p, message, tag)
+	repeat wait(tick) print("Received Message Request, waiting for GUI") until player:FindFirstChild("PlayerGui")
+	ui:cycleMessages()
+	local newMessage = Instance.new("TextLabel", player.PlayerGui.Main.chatFrame)
+	newMessage.TextColor3 = Color3.new(255,255,255)
+	newMessage.FontSize = Enum.FontSize.Size14
+	newMessage.Font = Enum.Font.Arcade
+	newMessage.TextXAlignment = Enum.TextXAlignment.Left
+	newMessage.BackgroundTransparency = 1
+	if tag then
+		newMessage.Text = "["..tag.."]".."["..p.Name.."]"..message
+	else
+		newMessage.Text = "["..p.Name.."]"..message
+	end
+	newMessage.Size = UDim2.new(1,0,0,25)
+	newMessage.Position = UDim2.new(0,0,0,newMessage.Parent.Size.Y.Offset-25)
+end
+
+function ui:registerSystemMessage(message, isJoin, isFirst, isLeave)
+	ui:cycleMessages()
+	local newMessage = Instance.new("TextLabel", player.PlayerGui.Main.chatFrame)
+	if isJoin then
+		newMessage.TextColor3 = chat.joinColor
+	elseif isFirst then
+		newMessage.TextColor3 = chat.firstJoinColor
+	elseif isLeave then
+		newMessage.TextColor3 = chat.leaveColor
+	else
+		newMessage.TextColor3 = chat.systemColor
+	end
+	newMessage.FontSize = Enum.FontSize.Size14
+	newMessage.Font = Enum.Font.Arcade
+	newMessage.TextXAlignment = Enum.TextXAlignment.Left
+	newMessage.BackgroundTransparency = 1
+	newMessage.Text = "[System]"..message
+	newMessage.Size = UDim2.new(1,0,0,25)
+	newMessage.Position = UDim2.new(0,0,0,newMessage.Parent.Size.Y.Offset-25)
 end
 
 function ui.updateHotbar()
@@ -289,7 +375,24 @@ function ui.updateHotbar()
 	end
 end
 
+function ui.updateInventory()
+	for i,v in pairs(character.inventory) do
+		if player.PlayerGui.Main.Inventory.SlotBag:FindFirstChild(i) then
+			local slot = player.PlayerGui.Main.Inventory.SlotBag:FindFirstChild(i)
+			if v.Id == 0 then
+				slot.stack.Text = ""
+			else
+				slot.stack.Text = "x"..v.Stack
+				slot.Image.Image = itemMod.itemImage[v.Id]
+			end
+		end
+	end
+end
+
 function ui.onStepped()
+	if effects.Arm ~= nil then
+		effects:updateArm()
+	end
 	if not ui.scenic then
 		game:GetService("UserInputService").MouseIconEnabled = false
 		player.PlayerGui.Main.Enabled = false
@@ -298,12 +401,12 @@ function ui.onStepped()
 		player.PlayerGui.Main.Enabled = true
 	end
 	player:GetMouse().TargetFilter = workspace.ignoreList
-	effects.updateEquippedItem()
 	player.PlayerGui.Main.Craft.Visible = character.craftOpen
 	player.PlayerGui.Main.Inventory.Visible = character.invOpen
-	world:updateCurrentChunk()
 	world:updateChunks()
 	ui.updateHotbar()
+	ui.updateInventory()
+	ui.updateHealthBar()
 	local mouse = player:GetMouse()
 	player:GetMouse().Icon = ui.cursorIcon
 	game:GetService('Players').LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
@@ -317,16 +420,32 @@ function ui.onStepped()
 					effects:destroyBox()
 				end
 				effects:registerBox(mouse.Target, Color3.new(0,0,0), .01)
-				ui:createBlockInfoContainer(mouse.Target.Name)
+				ui:createBlockInfoContainer(mouse.Target)
 				player.PlayerGui.Main.blockHovered.Visible = true
+				player.PlayerGui.Main.blockHovered2.Visible = true
+			end
+		elseif mouse.Target.Parent.ClassName == "Model" and not mouse.Target.Parent.Parent == workspace.Blocks and itemMod.itemTypes[item:getId(mouse.Target.Parent.Name)] == itemMod.Type.Block and (player.Character.PrimaryPart.Position - mouse.Target.Parent.PrimaryPart.Position).Magnitude < 3*5 then
+			if not mouse.Target.Parent.PrimaryPart:FindFirstChild("SelectionBox") then
+				if effects.currentBox ~= nil then
+					effects:destroyBox()
+				end
+				effects:registerBox(mouse.Target.Parent.PrimaryPart, Color3.new(0,0,0), .01)
+				ui:createBlockInfoContainer(mouse.Target.Parent.PrimaryPart)
+				player.PlayerGui.Main.blockHovered.Visible = true
+				player.PlayerGui.Main.blockHovered2.Visible = true
 			end
 		else
+			player.PlayerGui.Main.blockHovered2.Visible = false
 			player.PlayerGui.Main.blockHovered.Visible = false
 			effects:destroyBox()
 		end
 	else
+		player.PlayerGui.Main.blockHovered2.Visible = false
 		player.PlayerGui.Main.blockHovered.Visible = false
 		effects:destroyBox()
+	end
+	if game:GetService("Players").LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson then
+		world:updateCurrentChunk()
 	end
 end
 
@@ -337,6 +456,8 @@ function ui.craft:changeSelection()
 	end
 	player.PlayerGui.Main.Craft.finishName.Text = itemMod.Localization[itemMod.Id[craftMod.recipeList[ui.craft.x][1][1]]].." x"..craftMod.recipeList[ui.craft.x][1][2]
 	player.PlayerGui.Main.Craft.itemName.Text = itemMod.Localization[itemMod.Id[craftMod.recipeList[ui.craft.x][3][2]]].." x"..craftMod.recipeList[ui.craft.x][3][1]
+	player.PlayerGui.Main.Craft.Item.Image = itemMod.itemImage[craftMod.recipeList[ui.craft.x][3][2]]
+	player.PlayerGui.Main.Craft.Finish.Image = itemMod.itemImage[craftMod.recipeList[ui.craft.x][1][1]]
 end
 
 function ui.craft:createItem()
@@ -357,6 +478,42 @@ function ui.craft:createItem()
 	end
 end
 
+function ui:createHealthBar(slots)
+	for i = 1, slots do
+		local newImage = Instance.new("ImageLabel", player.PlayerGui.Main.Hp)
+		newImage.Image = ui.heartImage
+		newImage.BackgroundTransparency = 1
+		newImage.Name = i
+	end
+	for i = 1, slots do
+		local newImage = Instance.new("ImageLabel", player.PlayerGui.Main.Food)
+		newImage.Image = ui.foodIcon
+		newImage.BackgroundTransparency = 1
+		newImage.Name = i
+	end
+end
+
+function ui:updateHealthBar()
+	for i,v in pairs(player.PlayerGui.Main.Hp:GetChildren()) do
+		if v.ClassName == "ImageLabel" then
+			if i-1 > math.floor(player.Character.Humanoid.Health/2) then
+				v.Visible = false
+			else
+				v.Visible = true
+			end
+		end
+	end
+	for i,v in pairs(player.PlayerGui.Main.Food:GetChildren()) do
+		if v.ClassName == "ImageLabel" then
+			if i-1 > math.floor(character.currentFood/2) then
+				v.Visible = false
+			else
+				v.Visible = true
+			end
+		end
+	end
+end
+
 function effects:registerParticle(pos, color, time, accel, size, speed)
 	local part = Instance.new("Part", workspace.ignoreList)
 	local particle = Instance.new("ParticleEmitter", part)
@@ -370,27 +527,6 @@ function effects:registerParticle(pos, color, time, accel, size, speed)
 	part.CFrame = pos
 	wait(time/16)
 	part:Destroy()
-end
-
-function effects:updateEquippedItem()
-	if character.hotbar[character.currentlyEquipped].Id ~= 0 then
-		if effects.currentBlock ~= nil and itemMod.itemLookUp(effects.currentBlock.Name) ~= character.hotbar[character.currentlyEquipped].Id then
-			effects.currentBlock:Destroy()
-			effects.currentBlock = nil
-		end
-		if itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
-			if effects.currentBlock == nil then
-		local newItem = game.ReplicatedStorage.Blocks[itemMod.Id[character.hotbar[character.currentlyEquipped].Id]]:Clone()
-			newItem.Parent = workspace.CurrentCamera
-			newItem.Size = Vector3.new(.4,.4,.4)
-			newItem.Anchored = true
-			effects.currentBlock = newItem
-			return true
-			else
-			effects.currentBlock.CFrame = workspace.CurrentCamera.CFrame + workspace.CurrentCamera.CFrame.LookVector/2 - workspace.CurrentCamera.CFrame.upVector/2 + workspace.CurrentCamera.CFrame.RightVector/2
-			end
-		end
-	end
 end
 
 function effects:registerBox(parent, color, size)
@@ -411,6 +547,66 @@ function effects:destroyBox()
 	end
 end
 
+function effects:toggleBlur(val)
+	effects.blur.Enabled = val
+end
+
+function effects:registerArm()
+	if not workspace.CurrentCamera:FindFirstChild("armPart") then
+		effects.Arm = game.ReplicatedStorage.Animations.armPart:Clone()
+		effects.Arm.Parent = workspace.CurrentCamera
+	end
+end
+
+function effects:updateArm()
+	if workspace.CurrentCamera:FindFirstChild("armPart") then
+		if not character.isWalking then
+			effects.Arm.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position - workspace.CurrentCamera.CFrame.UpVector/1.25 + workspace.CurrentCamera.CFrame.RightVector/1.25, player:GetMouse().Hit.p)
+		else
+			effects.Arm.CFrame = CFrame.new((workspace.CurrentCamera.CFrame.Position - effects.Offset) - workspace.CurrentCamera.CFrame.upVector/1.25 + workspace.CurrentCamera.CFrame.RightVector/1.25, player:GetMouse().Hit.p)
+		end
+	end
+end
+
+function effects:createCloud()
+	local h = effects.cloudHeight/4*4
+    local cloud = game.ReplicatedStorage.Blocks.Cloud:Clone()
+    cloud.Parent = workspace.Clouds
+    cloud.Size = Vector3.new(math.random(3,10)*4,math.random(2,5)*4,math.random(3,10)*4)
+    cloud.CFrame = CFrame.new(-190, h, math.random(-600,600))
+    cloud.CanCollide = false
+    game:GetService("RunService").Stepped:Connect(function()
+        cloud.CFrame = cloud.CFrame*CFrame.new(.1, 0, 0)
+    end)
+end
+
+function effects.onStepped()
+	if not effects.currentBlock then
+		if workspace.CurrentCamera:FindFirstChild("DummyBlock") then
+			workspace.CurrentCamera:FindFirstChild("DummyBlock"):Destroy()
+		end
+		if character.hotbar[character.currentlyEquipped].Id == 0 then
+			return
+		end
+		if not itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
+			return
+		end
+		local newBlock = game.ReplicatedStorage.Items[itemMod.Id[character.hotbar[character.currentlyEquipped].Id]]:Clone()
+		newBlock.Parent = workspace.CurrentCamera
+		newBlock.Name = "DummyBlock"
+		if itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block.Interactable then
+			print("[Effects] Block Size")
+			newBlock.Size = Vector3.new(.5,.5,.5)
+		else
+			print("[Effects] Tool Size")
+			newBlock.Size = Vector3.new(1.5,1.5,1.5)
+		end
+		newBlock.CanCollide = false
+		effects.currentBlock = newBlock
+	end
+	effects.currentBlock.CFrame = effects.Arm.CFrame + effects.Arm.CFrame.lookVector*1.75
+end
+
 function input:registerInputEvent(inputE)
 	local mouse = player:GetMouse()
 	local target = mouse.Target
@@ -421,14 +617,18 @@ function input:registerInputEvent(inputE)
 		elseif keyMod.keyList[inputE.KeyCode] == 10 then
 			if not character.invOpen then
 				character.invOpen = true
+				effects:toggleBlur(true)
 			else
 				character.invOpen = false
+				effects:toggleBlur(false)
 			end
 		elseif keyMod.keyList[inputE.KeyCode] == 11 then
 			if not character.craftOpen then
 				character.craftOpen = true
+				effects:toggleBlur(true)
 			else
 				character.craftOpen = false
+				effects:toggleBlur(false)
 			end
 		elseif keyMod.keyList[inputE.KeyCode] == 12 then
 			if ui.scenic then
@@ -444,6 +644,10 @@ function input:registerInputEvent(inputE)
 			if ui.chunkLevel > 1 then
 				ui.chunkLevel = ui.chunkLevel - 1
 			end
+		elseif keyMod.keyList[inputE.KeyCode] == 15 then
+			player.PlayerGui.Main.chatBox:CaptureFocus()	
+		elseif keyMod.keyList[inputE.KeyCode] == 16 then
+			character.isWalking = true	
 		end	
 	end
 	if character.invOpen or character.craftOpen then
@@ -462,6 +666,21 @@ function input:registerInputEvent(inputE)
 				if success == "breakBlock" then
 					character:findOpenSlot(item:getId(target.Name))
 				end
+			elseif itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Tool then
+				item.type.tool.onUse(target, itemMod.itemSubTypes[character.hotbar[character.currentlyEquipped].Id], character.hotbar[character.currentlyEquipped].Id)
+			end
+		elseif not isBlock then
+			local isModelBlock = item:checkBlockStateModel(target)
+			if isModelBlock then
+				local canBreak = item:checkHardness(item:getId(target.Parent.Name))
+				if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or canBreak <= 6 and character.hotbar[character.currentlyEquipped].Id == 0 then
+					effects:registerParticle(target.CFrame, ColorSequence.new(target.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
+					local name = target.Parent.Name
+					local success, tempPart, itemId = network:FireEvent("blockDamage", target.Parent, "Hand", 0, item:getId(target.Name))
+					if success == "breakBlock" then
+						character:findOpenSlot(item:getId(name))
+					end
+				end
 			end
 		end
 	end
@@ -473,7 +692,7 @@ function input:registerInputEvent(inputE)
 				return
 			end
 			if character.currentlyEquipped ~= nil then
-				if itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block then
+				if itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block.Interactable then
 					item:placeBlock()
 				end
 			end
@@ -483,9 +702,6 @@ end
 
 function world:updateCurrentChunk()
 	for i,v in pairs(workspace.Blocks:GetChildren()) do
-		if not v:FindFirstChild("PrimaryPart") then
-			return true
-		end
 		if v.PrimaryPart ~= nil then
 			if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 24 then
 				player.PlayerGui.Main.currChunk.Text = v.Name
@@ -495,8 +711,8 @@ function world:updateCurrentChunk()
 end
 
 function world:updateChunks()
-	game.Lighting.FogStart = 15*ui.chunkLevel
-	game.Lighting.FogEnd = 40*ui.chunkLevel
+	--game.Lighting.FogStart = 15*ui.chunkLevel
+	--game.Lighting.FogEnd = 40*ui.chunkLevel
 	for i,v in pairs(workspace.Blocks:GetChildren()) do
 		if math.sqrt((v.PrimaryPart.Position.X - player.Character.PrimaryPart.Position.X)^2 + (v.PrimaryPart.Position.Z - player.Character.PrimaryPart.Position.Z)^2) > 48*ui.chunkLevel then
 			v.Parent = game.ReplicatedStorage.blockCache
@@ -512,6 +728,21 @@ end
 character:Init()
 
 
+game.ReplicatedStorage.Events.playerSentMessage.OnClientInvoke = function(p, m, tag)
+	chat:receiveMessage(p,m,tag)	
+end
+
+game.ReplicatedStorage.Events.systemMessage.OnClientInvoke = function(m, i, f, l)
+	ui:registerSystemMessage(m, i, f, l)
+end
+
+player.PlayerGui.Main.chatBox.FocusLost:Connect(function(e)
+	if e then
+		chat:registerMessage(player.PlayerGui.Main.chatBox.Text)
+	end	
+	player.PlayerGui.Main.chatBox.Text = "Press / to start typing!"
+end)
+
 player.PlayerGui.Main.Craft.Craft.MouseButton1Click:Connect(function()
 	ui.craft:createItem()	
 end)
@@ -522,6 +753,29 @@ end)
 game:GetService("UserInputService").InputBegan:Connect(function(i)
 	input:registerInputEvent(i)
 end)
+
+game:GetService("UserInputService").InputEnded:Connect(function(i)
+	if i.KeyCode == Enum.KeyCode.W then
+		character.isWalking = false
+	end	
+end)
+
+spawn(function()
+	repeat wait(tick) 
+		player.PlayerGui.Load.label.Text = "Loading... [This may take a while!]"
+	until
+	game:GetService('Players').LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson
+	player.PlayerGui.Load.Enabled = false	
+end)
+
+spawn(function()
+	while wait(math.random(3)) do
+		effects:createCloud()
+	end	
+end)
+
 game:GetService("RunService").RenderStepped:Connect(function()
 	ui.onStepped()	
+	character.onStepped()
+	effects.onStepped()
 end)
