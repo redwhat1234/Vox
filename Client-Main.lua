@@ -4,6 +4,7 @@ local itemMod = require(game.ReplicatedStorage.modules.itemModule)
 local keyMod = require(game.ReplicatedStorage.modules.keyCode)
 local vectorMod = require(script.Parent.Placement.Mechanics)
 local craftMod = require(game.ReplicatedStorage.modules.craftingModule)
+local soundModule = require(game.ReplicatedStorage.modules.gameSound)
 
 repeat wait(tick) until player:FindFirstChild("PlayerGui")
 repeat wait(tick) until player.PlayerGui:FindFirstChild("Load")
@@ -25,6 +26,7 @@ local ui = {}
 local effects = {}
 local input = {}
 local world = {}
+local sound = {}
 
 character.hotbar = {}
 character.inventory = {}
@@ -34,6 +36,7 @@ character.craftOpen = false
 character.currentFood = 20
 character.maxFood = 20
 character.isWalking = false
+character.isMining = false
 
 item.type = {}
 item.type.tool = {}
@@ -71,6 +74,11 @@ ui.cursorIcon = "rbxassetid://1776629404"
 effects.blur = Instance.new("BlurEffect", workspace.CurrentCamera)
 effects.blur.Enabled = false
 
+function world:roundMultiple(n, mult)
+   local h = mult * 0.5
+   return (n+h) - (n+h)%mult
+end
+
 function character:Init()
 	repeat wait(tick) until player:FindFirstChild("PlayerGui"):FindFirstChild("Main")
 	character:createHotbar(9)
@@ -80,6 +88,11 @@ function character:Init()
 	ui:createHealthBar(10)
 	player.PlayerGui.Main.chatBox.Text = "Press / to start typing!"
 	effects:registerArm()
+--	for i,v in pairs(player.Character.Head:GetChildren()) do
+--		if v.ClassName == "Sound" then
+--			v.SoundId = soundModule.stepIds[soundModule.stepNameId["blockGrass"]]
+--		end
+--	end
 end
 
 function character.onStepped()
@@ -132,14 +145,17 @@ function character:findOpenSlot(Id)
 			return true
 		end
 	end
+		print("[Character :: Slot Locate] Couldn't Find Slot In Hotbar, Checking Inventory")
 	for i,v in pairs(character.inventory) do
 		if character.inventory[i] ~= {} and character.inventory[i].Id == Id and character.inventory[i].Stack < itemMod.maxStacks[Id] then
 			character.inventory[i].Stack = character.inventory[i].Stack + 1
+			print("Updated Current Stack! .. Slot: "..i)
 			return true
 		elseif character.inventory[i] == {} then
 			character.inventory[i].Id = Id
 			character.inventory[i].Stack = 1
 			character.inventory[i].Image = itemMod.itemImage[Id]
+			print("Created New Stack! .. Slot: "..i)
 			return true
 		end
 	end
@@ -223,21 +239,80 @@ function item:checkHardness(Id)
 	return itemMod.Type.Block.Hardness[Id]
 end
 
-function item.type.tool.onUse(target,toolType,Id)
-	if toolType == itemMod.itemSubTypes.Pickaxe then
-		if itemMod.Type.Tool.Pickaxe[item:getId(target.Name)] then
-			local success, color, pos, itemId = network:FireEvent("blockDamage", target, toolType, Id, item:getId(target.Name))
-			if success == "breakBlock" then
-				effects:registerParticle(pos, color, 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
-				character:findOpenSlot(itemId)
+function item.type.tool.onUse(toolId, target)
+	print("[Tool Use :: Block Unlocalized Name] "..target.Name)
+	print("[Tool Use :: Tool Id] "..toolId)
+	print("[Tool Use :: Target Id] ".. item:getId(target.Name))
+	while character.isMining and target ~= nil do
+		wait(tick)
+		print("[Tool Use :: Block Hardness] "..itemMod.Type.Block.Hardness[item:getId(target.Name)])
+		local mineTime
+		local correctTool = false
+		for i,v in pairs(itemMod.itemSubTypes[toolId]) do
+			print("[Tool Use :: itemSubType Accepted List] Id: "..v)
+			if v == item:getId(target.Name) then
+				correctTool = true
 			end
 		end
-	elseif toolType == itemMod.itemSubTypes.Shovel then
-		if itemMod.Type.Tool.Shovel[item:getId(target.Name)] then
-			local success, color, pos, itemId = network:FireEvent("blockDamage", target, toolType, Id, item:getId(target.Name))
-			if success == "breakBlock" then
-				effects:registerParticle(pos, color, 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
-				character:findOpenSlot(itemId)
+		if correctTool then
+			warn("[Tool Use :: Block Break Type Determination] True")
+		else
+			warn("[Tool Use :: Block Break Type Determination] False")
+		end
+		if itemMod.itemTypes[toolId] ~= itemMod.Type.Block and correctTool then
+			print("[Tool Use :: Break Type] Correct Tool-Type")
+			mineTime = itemMod.Type.Block.Hardness[item:getId(target.Name)]*1.5
+		else
+			print("[Tool Use :: Break Type] Not Correct Tool-Type")
+			mineTime = itemMod.Type.Block.Hardness[item:getId(target.Name)]*5
+		end
+		if itemMod.itemTypes[toolId] == itemMod.Type.Block then
+			print("[Tool Use :: Tool Level] "..itemMod.Type.Tool.toolLevel[0])
+			mineTime = mineTime/(itemMod.Type.Tool.toolLevel[0])
+		else
+			print("[Tool Use :: Tool Level] "..itemMod.Type.Tool.toolLevel[toolId])
+			mineTime = mineTime/(itemMod.Type.Tool.toolLevel[toolId])
+		end
+		print("[Tool Use :: Mining Time] "..mineTime)
+		for i = 1, 10 do
+			if character.isMining then
+				if target.ClassName == "Part" or target.ClassName == "UnionOperation" then
+					if not target:FindFirstChild("breakDecal1") then
+						print("[Tool Use :: Decal Creation] Creating New Break Effect.")
+						for a = 1, 6 do
+							local newDecal = Instance.new("Decal", target)
+							newDecal.Face = itemMod.faceIds[a]
+							newDecal.Texture = itemMod.breakId[i]
+							newDecal.Name = "breakDecal"..a
+						end
+					else
+						print("[Tool Use :: Decal Creation] Updating Break Effect.")
+						for a = 1,6 do
+							target:FindFirstChild("breakDecal"..a).Texture = itemMod.breakId[i]
+						end
+					end
+					sound:PlaySound("breakSound")
+					if i == 10 then
+						print("[Tool Use :: Fire Event] Firing Break Event.")
+						network:FireEvent("blockDamage", target, mineTime)
+					end
+				end
+			else
+				print("[Tool Use :: Action Broken] Action was Ended Returning with Remaining Time of: "..mineTime-(mineTime/i))
+				for i,v in pairs(target:GetChildren()) do
+					if v.ClassName == "Decal" then
+						v:Destroy()
+					end
+				end
+				break
+			end
+			wait(mineTime/10)
+		end
+	end
+	if not target == nil then
+		for i,v in pairs(target:GetChildren()) do
+			if v.ClassName == "Decal" then
+				v:Destroy()
 			end
 		end
 	end
@@ -367,6 +442,7 @@ function ui.updateHotbar()
 			local slot = player.PlayerGui.Main.hotBar:FindFirstChild(i)
 			if v.Id == 0 then
 				slot.stack.Text = ""
+				slot.Image.Image = ""
 			else
 				slot.stack.Text = "x"..v.Stack
 				slot.Image.Image = itemMod.itemImage[v.Id]
@@ -381,6 +457,7 @@ function ui.updateInventory()
 			local slot = player.PlayerGui.Main.Inventory.SlotBag:FindFirstChild(i)
 			if v.Id == 0 then
 				slot.stack.Text = ""
+				slot.Image.Image = ""
 			else
 				slot.stack.Text = "x"..v.Stack
 				slot.Image.Image = itemMod.itemImage[v.Id]
@@ -396,9 +473,21 @@ function ui.onStepped()
 	if not ui.scenic then
 		game:GetService("UserInputService").MouseIconEnabled = false
 		player.PlayerGui.Main.Enabled = false
+		if workspace.CurrentCamera:FindFirstChild("armPart") then
+			workspace.CurrentCamera:FindFirstChild("armPart").Transparency = 1
+			if workspace.CurrentCamera:FindFirstChild("DummyBlock") then
+				workspace.CurrentCamera:FindFirstChild("DummyBlock").Transparency = 1
+			end
+		end
 	else
 		game:GetService("UserInputService").MouseIconEnabled = true
 		player.PlayerGui.Main.Enabled = true
+		if workspace.CurrentCamera:FindFirstChild("armPart") then
+			workspace.CurrentCamera:FindFirstChild("armPart").Transparency = 0
+			if workspace.CurrentCamera:FindFirstChild("DummyBlock") then
+				workspace.CurrentCamera:FindFirstChild("DummyBlock").Transparency = 0
+			end
+		end
 	end
 	player:GetMouse().TargetFilter = workspace.ignoreList
 	player.PlayerGui.Main.Craft.Visible = character.craftOpen
@@ -407,6 +496,7 @@ function ui.onStepped()
 	ui.updateHotbar()
 	ui.updateInventory()
 	ui.updateHealthBar()
+	ui:updatePosition()
 	local mouse = player:GetMouse()
 	player:GetMouse().Icon = ui.cursorIcon
 	game:GetService('Players').LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
@@ -445,7 +535,7 @@ function ui.onStepped()
 		effects:destroyBox()
 	end
 	if game:GetService("Players").LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson then
-		world:updateCurrentChunk()
+		--world:updateCurrentChunk()
 	end
 end
 
@@ -471,8 +561,9 @@ function ui.craft:createItem()
 		for i = 1, craftMod.recipeList[ui.craft.x][1][2] do
 			character:findOpenSlot(craftMod.recipeList[ui.craft.x][1][1])
 		end
-		if itemToUse.Stack == 0 then
+		if itemToUse.Stack <= 0 then
 			itemToUse.Id = 0
+			itemToUse.Image = ""
 		end
 		return true 
 	end
@@ -512,6 +603,11 @@ function ui:updateHealthBar()
 			end
 		end
 	end
+end
+
+function ui:updatePosition()
+	player.PlayerGui.Main.playerPosition.Text = "X:"..world:roundMultiple(math.floor(player.Character.PrimaryPart.Position.X),3)/3 .." Y:"..world:roundMultiple(math.floor(player.Character.PrimaryPart.Position.Y),3)/3 .." Z:"..world:roundMultiple(math.floor(player.Character.PrimaryPart.Position.Z),3)/3
+	player.PlayerGui.Main.fpsTracker.Text = "Frames Per Second: "..math.floor(workspace:GetRealPhysicsFPS())
 end
 
 function effects:registerParticle(pos, color, time, accel, size, speed)
@@ -559,10 +655,16 @@ function effects:registerArm()
 end
 
 function effects:updateArm()
+	local walkSpeed = 8
 	if workspace.CurrentCamera:FindFirstChild("armPart") then
+		player:GetMouse().TargetFilter = workspace
 		if not character.isWalking then
 			effects.Arm.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position - workspace.CurrentCamera.CFrame.UpVector/1.25 + workspace.CurrentCamera.CFrame.RightVector/1.25, player:GetMouse().Hit.p)
+			player.Character.Humanoid.CameraOffset = Vector3.new(0,0,0)
 		else
+			local walkSpeed = math.clamp(player.Character.Humanoid.MoveDirection.Magnitude,0,1)*player.Character.Humanoid.WalkSpeed/3
+			effects.Offset = Vector3.new(-(math.sin(time() * math.pi * walkSpeed)*.1)/2, -(math.sin(time() * math.pi * walkSpeed)*.1)/4, 0)
+			player.Character.Humanoid.CameraOffset = Vector3.new(0, math.sin(time() * math.pi * walkSpeed)*.1, 0)
 			effects.Arm.CFrame = CFrame.new((workspace.CurrentCamera.CFrame.Position - effects.Offset) - workspace.CurrentCamera.CFrame.upVector/1.25 + workspace.CurrentCamera.CFrame.RightVector/1.25, player:GetMouse().Hit.p)
 		end
 	end
@@ -572,11 +674,14 @@ function effects:createCloud()
 	local h = effects.cloudHeight/4*4
     local cloud = game.ReplicatedStorage.Blocks.Cloud:Clone()
     cloud.Parent = workspace.Clouds
-    cloud.Size = Vector3.new(math.random(3,10)*4,math.random(2,5)*4,math.random(3,10)*4)
+    cloud.Size = Vector3.new(math.random(10,30)*4,5*4,math.random(10,30)*4)
     cloud.CFrame = CFrame.new(-190, h, math.random(-600,600))
     cloud.CanCollide = false
     game:GetService("RunService").Stepped:Connect(function()
         cloud.CFrame = cloud.CFrame*CFrame.new(.1, 0, 0)
+        if cloud.CFrame.X >= 1000 then
+	       cloud:Destroy()
+        end
     end)
 end
 
@@ -637,7 +742,7 @@ function input:registerInputEvent(inputE)
 				ui.scenic = not ui.scenic
 			end
 		elseif keyMod.keyList[inputE.KeyCode] == 13 then
-			if ui.chunkLevel < 3 then
+			if ui.chunkLevel < 6 then
 				ui.chunkLevel = ui.chunkLevel + 1
 			end
 		elseif keyMod.keyList[inputE.KeyCode] == 14 then
@@ -648,41 +753,17 @@ function input:registerInputEvent(inputE)
 			player.PlayerGui.Main.chatBox:CaptureFocus()	
 		elseif keyMod.keyList[inputE.KeyCode] == 16 then
 			character.isWalking = true	
-		end	
+		elseif keyMod.keyList[inputE.KeyCode] == 17 then
+			network:FireEvent("jumpActive", true, player.Character.PrimaryPart.Position.Y)
+		else
+				
+		end
 	end
 	if character.invOpen or character.craftOpen then
 		return false
 	end
 	if inputE.UserInputType == Enum.UserInputType.MouseButton1 then
-		local isBlock = item:checkBlockState(item:getId(target.Name))
-		if isBlock then
-			if (player.Character.PrimaryPart.Position - target.Position).Magnitude > 3*5 then
-				return
-			end
-			local canBreak = item:checkHardness(item:getId(target.Name))
-			if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or canBreak <= 6 and character.hotbar[character.currentlyEquipped].Id == 0 then
-				effects:registerParticle(target.CFrame, ColorSequence.new(target.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
-				local success, tempPart, itemId = network:FireEvent("blockDamage", target, "Hand", 0, item:getId(target.Name))
-				if success == "breakBlock" then
-					character:findOpenSlot(item:getId(target.Name))
-				end
-			elseif itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Tool then
-				item.type.tool.onUse(target, itemMod.itemSubTypes[character.hotbar[character.currentlyEquipped].Id], character.hotbar[character.currentlyEquipped].Id)
-			end
-		elseif not isBlock then
-			local isModelBlock = item:checkBlockStateModel(target)
-			if isModelBlock then
-				local canBreak = item:checkHardness(item:getId(target.Parent.Name))
-				if canBreak <= 6 and character.currentlyEquipped == nil or canBreak <= 6 and itemMod.itemTypes[character.hotbar[character.currentlyEquipped].Id] == itemMod.Type.Block or canBreak <= 6 and character.hotbar[character.currentlyEquipped].Id == 0 then
-					effects:registerParticle(target.CFrame, ColorSequence.new(target.Color), 3, Vector3.new(0,-3,0), Vector3.new(3,3,3), .5)
-					local name = target.Parent.Name
-					local success, tempPart, itemId = network:FireEvent("blockDamage", target.Parent, "Hand", 0, item:getId(target.Name))
-					if success == "breakBlock" then
-						character:findOpenSlot(item:getId(name))
-					end
-				end
-			end
-		end
+		item.type.tool.onUse(character.hotbar[character.currentlyEquipped].Id, target)
 	end
 	if inputE.UserInputType == Enum.UserInputType.MouseButton2 then
 		print("BlockPlace Attempt!")
@@ -725,6 +806,16 @@ function world:updateChunks()
 	end
 end
 
+function sound:PlaySound(soundName)
+local Id = soundModule.stepIds[soundModule.stepNameId[soundName]]
+print("[Sound :: Sound ID] "..Id)
+local newsound = Instance.new("Sound", game.SoundService)
+newsound.SoundId = Id
+newsound:Play()
+print("[Sound :: Playing Sound] Playing Requested Sound")
+return true
+end
+
 character:Init()
 
 
@@ -734,6 +825,10 @@ end
 
 game.ReplicatedStorage.Events.systemMessage.OnClientInvoke = function(m, i, f, l)
 	ui:registerSystemMessage(m, i, f, l)
+end
+
+game.ReplicatedStorage.Events.pickupBlock.OnClientInvoke = function(d)
+	character:findOpenSlot(item:getId(d))
 end
 
 player.PlayerGui.Main.chatBox.FocusLost:Connect(function(e)
@@ -754,10 +849,34 @@ game:GetService("UserInputService").InputBegan:Connect(function(i)
 	input:registerInputEvent(i)
 end)
 
+player:GetMouse().WheelForward:Connect(function()
+	if character.currentlyEquipped == 9 then
+		ui.selectionChanged(1)
+	else
+		ui.selectionChanged(character.currentlyEquipped + 1)
+	end
+end)
+
+player:GetMouse().WheelBackward:Connect(function()
+	if character.currentlyEquipped == 1 then
+		ui.selectionChanged(9)
+	else
+		ui.selectionChanged(character.currentlyEquipped - 1)
+	end
+end)
+
+player:GetMouse().Button1Down:Connect(function()
+	character.isMining = true	
+end)
+
+player:GetMouse().Button1Up:Connect(function()
+	character.isMining = false	
+end)
+
 game:GetService("UserInputService").InputEnded:Connect(function(i)
 	if i.KeyCode == Enum.KeyCode.W then
 		character.isWalking = false
-	end	
+	end
 end)
 
 spawn(function()
@@ -769,7 +888,7 @@ spawn(function()
 end)
 
 spawn(function()
-	while wait(math.random(3)) do
+	while wait(math.random(9)) do
 		effects:createCloud()
 	end	
 end)
