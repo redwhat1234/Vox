@@ -1,0 +1,10 @@
+shared.libs = {}
+
+local function importLibraries(folder)
+   for i,v in pairs(folder:GetChildren()) do
+      if typeof(v) == "ModuleScript" then
+         shared.libs[v.Name] = require(v)
+      end
+   end
+   return shared.libs
+end
